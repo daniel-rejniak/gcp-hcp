@@ -69,7 +69,7 @@ flowchart LR
 
 - **Credential lifecycle:** Expiry enforcement and outage recovery need attention during design. Define expiry-aware delivery, freshness alerts and a bounded recovery budget across Google identity services, ESO and HyperShift.
 - **Worker disruption:** Worker kubelet service restarts might occur on renewal. Investigate credential reload without service restarts and assess workload impact during design.
-- **Image-access reliability:** Diagnose the GAR timeouts observed in POC image-import checks, and validate normal operation and outage recovery under worker egress restrictions.
+- **Image-access reliability:** Worker egress restrictions require monitoring of GAR connectivity and image-pull failures.
 - **Release compatibility:** Credential handling varies across components and releases. Validate adoption, bootstrap and upgrades on each supported release before activation.
 - **Shared authorization:** A per-management-cluster identity spans its opted-in hosted clusters. Limit access to registry reads, scope hosted-cluster identity bindings and review whether stronger isolation requires separate identities.
 
@@ -93,7 +93,8 @@ Use narrowly scoped hosted-cluster WIF bindings and read-only GAR access. Keep S
 
 ### Cost
 
-Budget for regional GAR storage and data transfer, Secret Manager operations, and monitoring. Size token-generation API quotas, controller capacity and reconciliation load for the fleet.
+- **GAR:** Budget for cache storage and applicable data transfer. [Pricing](https://cloud.google.com/artifact-registry/pricing).
+- **Credential retrieval:** Google IAM token-generation API calls are currently free; account for API quotas as the fleet grows. [Pricing](https://cloud.google.com/iam/pricing).
 
 ## Related Decisions
 
