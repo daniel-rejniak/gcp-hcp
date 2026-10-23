@@ -4,7 +4,7 @@
 
 **Date**: 2026-10-23
 
-**Status**: Proposed — informed by a development POC; production readiness remains to be validated.
+**Status**: Proposed — based on a development POC, with production safeguards and validation included in the proposed work.
 
 **Related work**: [GCP-738](https://redhat.atlassian.net/browse/GCP-738), [GCP-1268](https://redhat.atlassian.net/browse/GCP-1268), [GCP-1276 investigation](https://redhat.atlassian.net/browse/GCP-1276).
 
@@ -43,8 +43,8 @@ flowchart LR
 | Approach | Assessment |
 | --- | --- |
 | **Regional remote repositories + ESO/WIF pull-secret renewal** | **Proposed.** Reuses existing identity, secret-generation and delivery capabilities while supporting consumers that require Docker credentials. |
-| Native identity for every consumer | Preferred where supported. Worker credential providers and identity-aware registry clients could remove distributed GAR tokens, but mirror authentication, bootstrap and supported-release integration need investigation. |
-| Virtual repository over remote repositories | Tested in the POC, but not selected for production. It conflicts with the existing image-distribution decision; direct regional remotes remain the proposed baseline and require equivalent validation. |
+| Native identity for every consumer | Preferred where supported. Evaluate worker credential providers and identity-aware registry clients to remove distributed GAR tokens, including mirror authentication, bootstrap and supported-release integration. |
+| Virtual repository over remote repositories | Tested in the POC; excluded from this proposal to follow the existing image-distribution decision. Validate equivalent image access through direct regional remotes before rollout. |
 | Custom token service or runtime credential helper | Adds a service or runtime integration to own and support. Defer unless existing capabilities cannot meet lifecycle requirements. |
 | Long-lived Google service-account keys | Rejected: violates the keyless identity requirement and introduces persistent key management. |
 | Longer-lived tokens or manual rotation | A longer lifetime may increase the recovery window, but does not remove churn at an unchanged renewal frequency. Manual rotation is a recovery tool, not a replacement for automated renewal. |
@@ -53,9 +53,9 @@ flowchart LR
 
 **Justification:** The proposal extends existing GAR infrastructure and HyperShift credential delivery rather than requiring every consumer to adopt a new authentication interface. ESO already provides token generation, avoiding a separate token service. Regional repositories and per-management-cluster identities avoid cross-management-cluster credential dependencies.
 
-**Evidence:** The development POC demonstrated private-worker bootstrap and scaling across credential renewals, and overnight renewal with unchanged OpenShift API server Pod identities and zero container restarts. These are bounded observations, not production guarantees. The tested topology used a virtual repository in the management project; the proposed direct regional topology still needs validation. Detailed measurements and implementation findings belong to the POC record.
+**Evidence:** The development POC demonstrated private-worker bootstrap and scaling across credential renewals, and overnight renewal with unchanged OpenShift API server Pod identities and zero container restarts. These development observations support feasibility. Extend validation to the proposed direct regional repositories and representative operating conditions before production rollout. Detailed measurements and implementation findings belong to the POC record.
 
-**Comparison:** Native identity avoids distributing tokens and remains the direction to investigate for workers and registry clients. The pull-secret approach is an incremental bridge for current consumers; production adoption depends on resolving the lifecycle and operational risks below.
+**Comparison:** Native identity avoids distributing tokens and is a future direction for workers and registry clients. Use the pull-secret approach as an incremental bridge, with the lifecycle safeguards and operational improvements below forming part of implementation.
 
 ## Consequences
 
@@ -67,17 +67,18 @@ flowchart LR
 
 ### Negative
 
-- Image access depends on timely renewal and delivery across Google identity services, ESO and HyperShift. A retained Secret can still contain an expired token.
-- Worker kubelet service restarts still occur on renewal; removing Pod churn does not remove this service impact.
-- Expiry enforcement and outage recovery remain unproven, and later POC image-import checks encountered unresolved GAR timeouts.
-- Supported-release compatibility and component credential handling require validation. A per-management-cluster identity also creates a shared authorization boundary for its opted-in hosted clusters.
+- **Credential lifecycle:** Expiry enforcement and outage recovery need attention during design. Define expiry-aware delivery, freshness alerts and a bounded recovery budget across Google identity services, ESO and HyperShift.
+- **Worker disruption:** Worker kubelet service restarts might occur on renewal. Investigate credential reload without service restarts and assess workload impact during design.
+- **Image-access reliability:** Diagnose the GAR timeouts observed in POC image-import checks, and validate normal operation and outage recovery under worker egress restrictions.
+- **Release compatibility:** Credential handling varies across components and releases. Validate adoption, bootstrap and upgrades on each supported release before activation.
+- **Shared authorization:** A per-management-cluster identity spans its opted-in hosted clusters. Limit access to registry reads, scope hosted-cluster identity bindings and review whether stronger isolation requires separate identities.
 
 ## Cross-Cutting Concerns
 
 ### Reliability
 
 - Track actual token expiry and delivery freshness, with monitoring and a recovery budget that covers generation, propagation and bootstrap. Prevent provisioning with insufficient credential validity; retaining the last complete Secret must not conceal expiry.
-- Validate renewal, recovery from source or delivery failures, and credential adoption under worker egress restrictions. Avoid publishing incomplete credentials; address kubelet restart impact before production activation.
+- Include renewal, source and delivery failure recovery, and credential adoption under worker egress restrictions in release acceptance. Preserve complete credentials during failures and enforce their expiry; evaluate worker reload changes for workload impact.
 - Confirm the behavior on supported releases, including bootstrap, scaling, upgrades and rollback. Measure fleet-scale API demand and reconciliation latency before expansion.
 
 ### Security
@@ -87,12 +88,12 @@ Use narrowly scoped hosted-cluster WIF bindings and read-only GAR access. Keep S
 ### Operability
 
 - **Ownership:** Infrastructure manages repositories and shared identities; Gecko manages hosted-cluster configuration and resources; ESO generates credentials; HyperShift delivers them. Hosted-cluster teardown must remove its resources and identity bindings while preserving shared infrastructure.
-- **Activation:** Prepare resources before opting in consumers. Prefer workers before control-plane routing, but define independent activation first: the current shared pull-secret selection also affects control-plane consumers. Review migration and fleet rollout impact; routine token bytes must remain outside worker replacement triggers.
-- **Rollback:** Restore image routing and credential selection together. Keep renewal running until a reachable, authenticated replacement path is verified; disabling opt-in alone is insufficient. Use canaries and validated rollback before wider activation.
+- **Activation:** Prepare resources before opting in consumers. Add independent worker activation to support worker-first rollout, since the current shared pull-secret selection also affects control-plane consumers. Review migration and fleet rollout impact; routine token bytes must remain outside worker replacement triggers.
+- **Rollback:** Restore image routing and credential selection together, and keep renewal running until the replacement path is authenticated and reachable. Validate this coordinated rollback on canaries before wider activation.
 
 ### Cost
 
-Account for regional GAR storage and data transfer, Secret Manager operations, and monitoring. Token-generation API quotas, controller capacity and reconciliation load must be sized for the fleet; avoiding worker NAT does not eliminate image-delivery costs.
+Budget for regional GAR storage and data transfer, Secret Manager operations, and monitoring. Size token-generation API quotas, controller capacity and reconciliation load for the fleet.
 
 ## Related Decisions
 
